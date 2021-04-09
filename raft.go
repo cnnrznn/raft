@@ -69,6 +69,10 @@ func (r *Raft) Run() {
 	}
 }
 
+func (r *Raft) becomeFollower() {
+	r.role = Follower
+}
+
 func (r *Raft) becomeCandidate() {
 	r.role = Candidate
 	r.term++
