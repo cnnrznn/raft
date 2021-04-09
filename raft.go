@@ -21,12 +21,17 @@ type Raft struct {
 	role          Role
 	votes         []string
 	heartBeatChan <-chan struct{}
+	candidateChan <-chan struct{}
 }
 
-func New(hbChan <-chan struct{}) *Raft {
+func New(
+	hbChan <-chan struct{},
+	cdChan <-chan struct{},
+) *Raft {
 	return &Raft{
 		role:          Follower,
 		heartBeatChan: hbChan,
+		candidateChan: cdChan,
 	}
 }
 
@@ -45,13 +50,28 @@ func (r *Raft) Run() {
 			select {
 			case <-r.heartBeatChan:
 				fmt.Println("heart beat")
-				// respond to heartbeat
+				// respond to heartbeat (leader request)
+				// or leader
+			case <-r.candidateChan:
+				// respond to candidate request
 			case <-time.After(timeout):
-				fmt.Println("Timeout", timeout)
-				r.term++
-				r.votes = []string{r.name}
-				r.role = Candidate
+				r.becomeCandidate()
+			}
+		case Candidate:
+			select {
+			case <-r.heartBeatChan:
+				// Another is claiming leader
+			case <-r.candidateChan:
+				// Another candidate?
+				// Response from voter?
 			}
 		}
 	}
+}
+
+func (r *Raft) becomeCandidate() {
+	r.role = Candidate
+	r.term++
+	r.votes = []string{r.name}
+	// Send request vote to all others
 }
