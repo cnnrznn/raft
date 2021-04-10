@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+
+	"github.com/cnnrznn/raft/cnet"
 )
 
 type Role string
@@ -15,27 +17,51 @@ const (
 )
 
 type Raft struct {
-	name          string
+	id            int
+	peers         []string
 	term          int
 	log           []string
 	role          Role
 	votes         []string
 	heartBeatChan <-chan struct{}
 	candidateChan <-chan struct{}
+	net           *cnet.Network
 }
 
 func New(
-	hbChan <-chan struct{},
-	cdChan <-chan struct{},
+	id int,
+	peers []string,
 ) *Raft {
 	return &Raft{
-		role:          Follower,
-		heartBeatChan: hbChan,
-		candidateChan: cdChan,
+		id:    id,
+		peers: peers,
+		role:  Follower,
+		net:   cnet.New(id, peers),
 	}
 }
 
 func (r *Raft) Run() {
+	send := make(chan cnet.PeerMsg)
+	recv := make(chan cnet.PeerMsg)
+	go r.net.Run(send, recv)
+
+	for _, p := range r.peers {
+		time.Sleep(6 * time.Second)
+		send <- cnet.PeerMsg{
+			Dst: p,
+			Src: r.peers[r.id],
+			Msg: "Hello",
+		}
+	}
+
+	for i := 0; i < len(r.peers); i++ {
+		<-recv
+	}
+
+	time.Sleep(10 * time.Second)
+
+	return
+
 	for {
 		switch r.role {
 		case Leader:
@@ -69,6 +95,10 @@ func (r *Raft) Run() {
 	}
 }
 
+func (r *Raft) becomeLeader() {
+	r.role = Leader
+}
+
 func (r *Raft) becomeFollower() {
 	r.role = Follower
 }
@@ -76,6 +106,6 @@ func (r *Raft) becomeFollower() {
 func (r *Raft) becomeCandidate() {
 	r.role = Candidate
 	r.term++
-	r.votes = []string{r.name}
+	r.votes = []string{r.peers[r.id]}
 	// Send request vote to all others
 }
