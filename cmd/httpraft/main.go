@@ -27,6 +27,9 @@ func main() {
 
 	// Run raft
 	raft.Run()
+
+	// Open http endpoint and take input from users
+	// Allow the user to query for log entries
 }
 
 func readPeers() *config {

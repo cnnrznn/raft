@@ -27,7 +27,7 @@ func New(
 }
 
 func (n *Network) Run(send, recv chan PeerMsg) {
-	connChan := make(chan net.Conn)
+	connChan := make(chan net.Conn, 100)
 	go n.listen(connChan)
 
 	for {

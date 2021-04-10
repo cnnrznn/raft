@@ -41,12 +41,11 @@ func New(
 }
 
 func (r *Raft) Run() {
-	send := make(chan cnet.PeerMsg)
-	recv := make(chan cnet.PeerMsg)
+	send := make(chan cnet.PeerMsg, 100)
+	recv := make(chan cnet.PeerMsg, 100)
 	go r.net.Run(send, recv)
 
 	for _, p := range r.peers {
-		time.Sleep(6 * time.Second)
 		send <- cnet.PeerMsg{
 			Dst: p,
 			Src: r.peers[r.id],
@@ -55,10 +54,8 @@ func (r *Raft) Run() {
 	}
 
 	for i := 0; i < len(r.peers); i++ {
-		<-recv
+		fmt.Println(<-recv)
 	}
-
-	time.Sleep(10 * time.Second)
 
 	return
 
