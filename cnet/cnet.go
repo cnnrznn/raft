@@ -6,10 +6,12 @@ import (
 	"net"
 )
 
+type MessageType int
+
 type PeerMsg struct {
 	Src, Dst string
-	Msg      string
-	Type     int
+	Msg      []byte
+	Type     MessageType
 }
 
 type Network struct {
