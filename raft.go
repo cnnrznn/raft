@@ -62,17 +62,21 @@ func (r *Raft) Run() {
 		case Leader:
 			select {
 			// receive client command
+			// handle leader requests
+			case lm := <-leaderChan:
+				r.asLeaderOrFollowerHandleLeaderMsg(lm, send)
 			// send regular updates faster than heartbeat timeout
 			case <-time.After(100 * time.Millisecond):
 				// Send empty Append
 			}
 		case Follower:
 			select {
+			// respond to append request
 			case <-appendChan:
-				// respond to heartbeat (leader request)
-				// or leader
-			case <-leaderChan:
-				// respond to candidate request
+			// response to leader requests
+			case lm := <-leaderChan:
+				r.asLeaderOrFollowerHandleLeaderMsg(lm, send)
+			// elect a new leader
 			case <-time.After(electionTimeout):
 				r.becomeCandidate(send)
 			}
@@ -97,8 +101,9 @@ func (r *Raft) becomeLeader() {
 	r.votedFor = ""
 }
 
-func (r *Raft) becomeFollower() {
+func (r *Raft) becomeFollower(term int) {
 	r.role = Follower
+	r.term = term
 
 	// reset the vote
 	r.votedFor = ""
@@ -120,6 +125,8 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 			Term:         r.term,
 			LastLogIndex: r.commitIndex,
 			LastLogTerm:  r.logTerms[r.commitIndex],
+			Src:          r.peers[r.id],
+			Dst:          peer,
 		}
 		lmBytes, err := json.Marshal(lm)
 		if err != nil {
@@ -164,4 +171,57 @@ func route(recv chan cnet.PeerMsg, appendChan chan AppendMsg, leaderChan chan Le
 			appendChan <- am
 		}
 	}
+}
+
+func (r *Raft) asLeaderOrFollowerHandleLeaderMsg(
+	lm LeaderMsg,
+	send chan cnet.PeerMsg,
+) {
+	if lm.Response {
+		// As a leader or follower ignore responses to old requests
+		// I am no longer a candidate
+		return
+	}
+
+	if lm.Term > r.term {
+		r.becomeFollower(lm.Term)
+		r.handleLeaderMsg(lm, send)
+	}
+}
+
+func (r *Raft) handleLeaderMsg(lm LeaderMsg, send chan cnet.PeerMsg) {
+	lm.Dst = lm.Src
+	lm.Src = r.peers[r.id]
+	lm.Response = true
+
+	var isUpToDate bool = false
+	if lm.LastLogTerm > r.logTerms[r.commitIndex] {
+		isUpToDate = true
+	} else if lm.LastLogTerm == r.logTerms[r.commitIndex] &&
+		lm.LastLogIndex >= r.commitIndex {
+		isUpToDate = true
+	}
+
+	if lm.Term < r.term {
+		lm.VoteGranted = false
+	} else if (r.votedFor == "" || r.votedFor == lm.Dst) &&
+		isUpToDate {
+		lm.VoteGranted = true
+		r.votedFor = lm.Dst
+	}
+
+	lmBytes, err := json.Marshal(lm)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	pm := cnet.PeerMsg{
+		Src:  lm.Src,
+		Dst:  lm.Dst,
+		Msg:  lmBytes,
+		Type: LEADER,
+	}
+
+	send <- pm
 }
