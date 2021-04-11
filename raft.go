@@ -23,14 +23,16 @@ const (
 )
 
 type Raft struct {
-	id       int
-	peers    []string
-	term     int
-	log      []string
-	role     Role
-	votes    []string
-	votedFor string
-	net      *cnet.Network
+	id          int
+	peers       []string
+	term        int
+	log         []string
+	logTerms    []int
+	commitIndex int
+	role        Role
+	votes       []string
+	votedFor    string
+	net         *cnet.Network
 }
 
 func New(
@@ -55,6 +57,7 @@ func (r *Raft) Run() {
 	go route(recv, appendChan, leaderChan)
 
 	for {
+		electionTimeout := time.Duration(rand.Intn(500)+500) * time.Millisecond
 		switch r.role {
 		case Leader:
 			select {
@@ -64,15 +67,14 @@ func (r *Raft) Run() {
 				// Send empty Append
 			}
 		case Follower:
-			timeout := time.Duration(rand.Intn(500)+500) * time.Millisecond
 			select {
 			case <-appendChan:
 				// respond to heartbeat (leader request)
 				// or leader
 			case <-leaderChan:
 				// respond to candidate request
-			case <-time.After(timeout):
-				r.becomeCandidate()
+			case <-time.After(electionTimeout):
+				r.becomeCandidate(send)
 			}
 		case Candidate:
 			select {
@@ -81,6 +83,8 @@ func (r *Raft) Run() {
 			case <-leaderChan:
 				// Another candidate?
 				// Response from voter?
+			case <-time.After(electionTimeout):
+				r.becomeCandidate(send)
 			}
 		}
 	}
@@ -100,12 +104,38 @@ func (r *Raft) becomeFollower() {
 	r.votedFor = ""
 }
 
-func (r *Raft) becomeCandidate() {
+func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 	r.role = Candidate
 	r.term++
 	r.votes = []string{r.peers[r.id]}
 	r.votedFor = r.peers[r.id]
+
 	// Send request vote to all others
+	for i, peer := range r.peers {
+		if i == r.id {
+			continue
+		}
+
+		lm := LeaderMsg{
+			Term:         r.term,
+			LastLogIndex: r.commitIndex,
+			LastLogTerm:  r.logTerms[r.commitIndex],
+		}
+		lmBytes, err := json.Marshal(lm)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		pm := cnet.PeerMsg{
+			Type: LEADER,
+			Msg:  lmBytes,
+			Src:  r.peers[r.id],
+			Dst:  peer,
+		}
+
+		send <- pm
+	}
 }
 
 func route(recv chan cnet.PeerMsg, appendChan chan AppendMsg, leaderChan chan LeaderMsg) {
