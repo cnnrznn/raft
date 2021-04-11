@@ -133,7 +133,6 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 			Src:          r.peers[r.id],
 			Dst:          peer,
 		}
-		fmt.Println("Sending:", lm)
 		lmBytes, err := json.Marshal(lm)
 		if err != nil {
 			fmt.Println(err)
