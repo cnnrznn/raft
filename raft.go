@@ -84,9 +84,10 @@ func (r *Raft) Run() {
 			select {
 			case <-appendChan:
 				// Another is claiming leader
-			case <-leaderChan:
+			case lm := <-leaderChan:
 				// Another candidate?
 				// Response from voter?
+				r.asCandidateHandleLeaderMsg(lm, send)
 			case <-time.After(electionTimeout):
 				r.becomeCandidate(send)
 			}
@@ -183,10 +184,48 @@ func (r *Raft) asLeaderOrFollowerHandleLeaderMsg(
 		return
 	}
 
-	if lm.Term > r.term {
+	if lm.Term < r.term {
+		r.rejectLeaderMsg(lm, send)
+	} else if lm.Term > r.term {
 		r.becomeFollower(lm.Term)
 		r.handleLeaderMsg(lm, send)
 	}
+}
+
+func (r *Raft) asCandidateHandleLeaderMsg(
+	lm LeaderMsg,
+	send chan cnet.PeerMsg,
+) {
+	if lm.Term < r.term {
+		r.rejectLeaderMsg(lm, send)
+	} else if lm.Term > r.term {
+		r.becomeFollower(lm.Term)
+		r.handleLeaderMsg(lm, send)
+	}
+}
+
+func (r *Raft) rejectLeaderMsg(lm LeaderMsg, send chan cnet.PeerMsg) {
+	// respond to out-dated candidate
+	lm.Dst = lm.Src
+	lm.Src = r.peers[r.id]
+	lm.Term = r.term
+	lm.Response = true
+	lm.VoteGranted = false
+
+	lmBytes, err := json.Marshal(lm)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	pm := cnet.PeerMsg{
+		Src:  lm.Src,
+		Dst:  lm.Dst,
+		Msg:  lmBytes,
+		Type: LEADER,
+	}
+
+	send <- pm
 }
 
 func (r *Raft) handleLeaderMsg(lm LeaderMsg, send chan cnet.PeerMsg) {
