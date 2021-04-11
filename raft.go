@@ -30,7 +30,7 @@ type Raft struct {
 	logTerms    []int
 	commitIndex int
 	role        Role
-	votes       []string
+	votes       map[string]struct{}
 	votedFor    string
 	net         *cnet.Network
 }
@@ -117,7 +117,7 @@ func (r *Raft) becomeFollower(term int) {
 func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 	r.role = Candidate
 	r.term++
-	r.votes = []string{r.peers[r.id]}
+	r.votes = map[string]struct{}{r.peers[r.id]: {}}
 	r.votedFor = r.peers[r.id]
 
 	// Send request vote to all others
@@ -205,6 +205,21 @@ func (r *Raft) asCandidateHandleLeaderMsg(
 	} else if lm.Term > r.term {
 		r.becomeFollower(lm.Term)
 		r.handleLeaderMsg(lm, send)
+	} else if lm.Response {
+		// this is a response to a LeaderMsg I sent in the same term
+		r.handleLeaderMsgResponse(lm)
+	}
+}
+
+func (r *Raft) handleLeaderMsgResponse(lm LeaderMsg) {
+	if !lm.VoteGranted {
+		return
+	}
+
+	r.votes[lm.Src] = struct{}{}
+
+	if len(r.votes) > (len(r.peers) / 2) {
+		r.becomeLeader()
 	}
 }
 
