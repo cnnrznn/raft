@@ -32,23 +32,35 @@ func (n *Network) Run(send, recv chan PeerMsg) {
 
 	for {
 		select {
-		case ch := <-connChan:
-			var pm PeerMsg
-			bytes := make([]byte, 1024)
-			n, err := ch.Read(bytes)
+		case conn := <-connChan:
+			pm, err := recvMsg(conn)
 			if err != nil {
 				fmt.Println(err)
+				continue
 			}
-			err = json.Unmarshal(bytes[:n], &pm)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			recv <- pm
+			recv <- *pm
 		case pm := <-send:
-			go n.sendMsg(pm)
+			n.sendMsg(pm)
 		}
 	}
+}
+
+func recvMsg(conn net.Conn) (*PeerMsg, error) {
+	var pm PeerMsg
+	bytes := make([]byte, 1024)
+
+	n, err := conn.Read(bytes)
+	if err != nil {
+		fmt.Println(err)
+		return nil, fmt.Errorf("reading from connection")
+	}
+	err = json.Unmarshal(bytes[:n], &pm)
+	if err != nil {
+		fmt.Println(err)
+		return nil, fmt.Errorf("unmarshalling read data")
+	}
+
+	return &pm, nil
 }
 
 func (n *Network) sendMsg(pm PeerMsg) {
@@ -62,6 +74,7 @@ func (n *Network) sendMsg(pm PeerMsg) {
 	bytes, err := json.Marshal(pm)
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	_, err = conn.Write(bytes)
 	if err != nil {
@@ -72,12 +85,14 @@ func (n *Network) sendMsg(pm PeerMsg) {
 func (n *Network) listen(ch chan net.Conn) {
 	ls, err := net.Listen("tcp", n.peers[n.id])
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
 	for {
 		conn, err := ls.Accept()
 		if err != nil {
+			fmt.Println(err)
 			continue
 		}
 		ch <- conn
