@@ -4,6 +4,11 @@ type AppendMsg struct {
 }
 
 type LeaderMsg struct {
+	// Request or response?
+	Response bool
+
+	Src, Dst string
+
 	// Request values
 	Term         int `json:"term"`
 	LastLogIndex int `json:"last_log_index"`
