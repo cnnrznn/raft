@@ -9,6 +9,7 @@ import (
 type PeerMsg struct {
 	Src, Dst string
 	Msg      string
+	Type     int
 }
 
 type Network struct {
