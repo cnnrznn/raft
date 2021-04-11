@@ -29,7 +29,11 @@ func main() {
 	raft.Run()
 
 	// Open http endpoint and take input from users
+	// POST /request
+
 	// Allow the user to query for log entries
+	// GET /log?index=<int>
+	// returns log starting at the provided index
 }
 
 func readPeers() *config {
