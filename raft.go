@@ -40,10 +40,14 @@ func New(
 	peers []string,
 ) *Raft {
 	return &Raft{
-		id:    id,
-		peers: peers,
-		role:  Follower,
-		net:   cnet.New(id, peers),
+		id:          id,
+		peers:       peers,
+		role:        Follower,
+		net:         cnet.New(id, peers),
+		commitIndex: 0,
+		log:         []string{""},
+		logTerms:    []int{0},
+		term:        0,
 	}
 }
 
@@ -129,6 +133,7 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 			Src:          r.peers[r.id],
 			Dst:          peer,
 		}
+		fmt.Println("Sending:", lm)
 		lmBytes, err := json.Marshal(lm)
 		if err != nil {
 			fmt.Println(err)
