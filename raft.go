@@ -45,20 +45,6 @@ func (r *Raft) Run() {
 	recv := make(chan cnet.PeerMsg, 100)
 	go r.net.Run(send, recv)
 
-	for _, p := range r.peers {
-		send <- cnet.PeerMsg{
-			Dst: p,
-			Src: r.peers[r.id],
-			Msg: "Hello",
-		}
-	}
-
-	for i := 0; i < len(r.peers); i++ {
-		fmt.Println(<-recv)
-	}
-
-	return
-
 	for {
 		switch r.role {
 		case Leader:
