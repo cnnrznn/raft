@@ -72,11 +72,13 @@ func (r *Raft) Run() {
 			// send regular updates faster than heartbeat timeout
 			case <-time.After(100 * time.Millisecond):
 				// Send empty Append
+				r.sendEmptyAppend(send)
 			}
 		case Follower:
 			select {
 			// respond to append request
-			case <-appendChan:
+			case am := <-appendChan:
+				r.handleAppendMsg(am, send)
 			// response to leader requests
 			case lm := <-leaderChan:
 				r.asLeaderOrFollowerHandleLeaderMsg(lm, send)
@@ -86,8 +88,9 @@ func (r *Raft) Run() {
 			}
 		case Candidate:
 			select {
-			case <-appendChan:
+			case am := <-appendChan:
 				// Another is claiming leader
+				r.handleAppendMsg(am, send)
 			case lm := <-leaderChan:
 				// Another candidate?
 				// Response from voter?
@@ -144,6 +147,41 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 			Msg:  lmBytes,
 			Src:  r.peers[r.id],
 			Dst:  peer,
+		}
+
+		send <- pm
+	}
+}
+
+func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
+	if am.Response {
+	}
+
+	if am.Term < r.term {
+		am.Term = r.term
+	}
+}
+
+func (r *Raft) sendEmptyAppend(send chan cnet.PeerMsg) {
+	for i, peer := range r.peers {
+		if i == r.id {
+			continue
+		}
+
+		am := AppendMsg{
+			Term: r.term,
+		}
+		amBytes, err := json.Marshal(am)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		pm := cnet.PeerMsg{
+			Src:  r.peers[r.id],
+			Dst:  peer,
+			Msg:  amBytes,
+			Type: APPEND,
 		}
 
 		send <- pm
