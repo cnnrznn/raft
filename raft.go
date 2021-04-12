@@ -77,7 +77,7 @@ func (r *Raft) Run() {
 			// send regular updates faster than heartbeat timeout
 			case <-time.After(100 * time.Millisecond):
 				// Send empty Append
-				r.sendEmptyAppend(send)
+				r.sendAppendMsg(send)
 			}
 		case Follower:
 			fmt.Println("I am Follower", r.term)
@@ -235,16 +235,20 @@ func (r *Raft) rejectAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
 	send <- pm
 }
 
-func (r *Raft) sendEmptyAppend(send chan cnet.PeerMsg) {
+func (r *Raft) sendAppendMsg(send chan cnet.PeerMsg) {
 	for i, peer := range r.peers {
 		if i == r.id {
 			continue
 		}
 
 		am := AppendMsg{
-			Term: r.term,
-			Src:  r.peers[r.id],
-			Dst:  peer,
+			Src:          r.peers[r.id],
+			Dst:          peer,
+			Term:         r.term,
+			PrevLogIndex: r.nextIndex[i] - 1,
+			PrevLogTerm:  r.logTerms[r.nextIndex[i]-1],
+			Entries:      r.log[r.nextIndex[i]:],
+			LeaderCommit: r.commitIndex,
 		}
 		amBytes, err := json.Marshal(am)
 		if err != nil {
