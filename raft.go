@@ -79,7 +79,6 @@ func (r *Raft) Run() {
 				r.handleLeaderMsg(lm, send)
 			// send regular updates faster than heartbeat timeout
 			case <-time.After(100 * time.Millisecond):
-				// Send empty Append
 				r.sendAppendMsg(send)
 			}
 		case Follower:
@@ -261,6 +260,7 @@ func (r *Raft) handleAppendMsgResponse(am AppendMsg, send chan cnet.PeerMsg) {
 		r.matchIndex[peerIndex] = r.nextIndex[peerIndex] - 1
 	} else {
 		r.nextIndex[peerIndex]--
+		r.sendAppendMsg(send)
 	}
 
 	r.incrementCommit()
