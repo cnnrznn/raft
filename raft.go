@@ -201,17 +201,13 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
 	if am.Term < r.term {
 		r.rejectAppendMsg(am, send)
+		return
 	} else if am.Term > r.term {
 		r.becomeFollower(am.Term)
 		r.handleAppendMsg(am, send)
-	}
-	// message term is equal to our term
-
-	if am.Response && r.role == Leader {
-		r.handleAppendMsgResponse(am, send)
 		return
 	} else if am.Response {
-		// Not leader, don't handle a response
+		r.handleAppendMsgResponse(am, send)
 		return
 	}
 
@@ -239,7 +235,7 @@ func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
 }
 
 func (r *Raft) handleAppendMsgResponse(am AppendMsg, send chan cnet.PeerMsg) {
-
+	// TODO
 }
 
 func (r *Raft) rejectAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
@@ -343,7 +339,6 @@ func (r *Raft) handleLeaderMsg(lm LeaderMsg, send chan cnet.PeerMsg) {
 		r.handleLeaderMsg(lm, send)
 		return
 	} else if lm.Response {
-		// this is a response to a LeaderMsg I sent in the same term
 		r.handleLeaderMsgResponse(lm)
 		return
 	}
