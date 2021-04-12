@@ -1,6 +1,9 @@
 package raft
 
 type AppendMsg struct {
+	Response bool
+
+	Term int
 }
 
 type LeaderMsg struct {
