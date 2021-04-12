@@ -71,9 +71,12 @@ func (r *Raft) Run() {
 			fmt.Println("I am Leader", r.term)
 			select {
 			// receive client command
-			// handle leader requests
+			// handle append responses
+			case am := <-appendChan:
+				r.handleAppendMsg(am, send)
+			// handle election
 			case lm := <-leaderChan:
-				r.asLeaderOrFollowerHandleLeaderMsg(lm, send)
+				r.handleLeaderMsg(lm, send)
 			// send regular updates faster than heartbeat timeout
 			case <-time.After(100 * time.Millisecond):
 				// Send empty Append
@@ -87,7 +90,7 @@ func (r *Raft) Run() {
 				r.handleAppendMsg(am, send)
 			// response to leader requests
 			case lm := <-leaderChan:
-				r.asLeaderOrFollowerHandleLeaderMsg(lm, send)
+				r.handleLeaderMsg(lm, send)
 			// elect a new leader
 			case <-time.After(electionTimeout):
 				r.becomeCandidate(send)
@@ -101,10 +104,38 @@ func (r *Raft) Run() {
 			case lm := <-leaderChan:
 				// Another candidate?
 				// Response from voter?
-				r.asCandidateHandleLeaderMsg(lm, send)
+				r.handleLeaderMsg(lm, send)
 			case <-time.After(electionTimeout):
 				r.becomeCandidate(send)
 			}
+		}
+	}
+}
+
+func route(recv chan cnet.PeerMsg, appendChan chan AppendMsg, leaderChan chan LeaderMsg) {
+	for {
+		// Read messages from recv
+		pm := <-recv
+
+		// Parse payload
+		// Forward message to correct channel
+		switch pm.Type {
+		case LEADER:
+			var lm LeaderMsg
+			err := json.Unmarshal(pm.Msg, &lm)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			leaderChan <- lm
+		case APPEND:
+			var am AppendMsg
+			err := json.Unmarshal(pm.Msg, &am)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			appendChan <- am
 		}
 	}
 }
@@ -267,67 +298,6 @@ func (r *Raft) sendAppendMsg(send chan cnet.PeerMsg) {
 	}
 }
 
-func route(recv chan cnet.PeerMsg, appendChan chan AppendMsg, leaderChan chan LeaderMsg) {
-	for {
-		// Read messages from recv
-		pm := <-recv
-
-		// Parse payload
-		// Forward message to correct channel
-		switch pm.Type {
-		case LEADER:
-			var lm LeaderMsg
-			err := json.Unmarshal(pm.Msg, &lm)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-			leaderChan <- lm
-		case APPEND:
-			var am AppendMsg
-			err := json.Unmarshal(pm.Msg, &am)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-			appendChan <- am
-		}
-	}
-}
-
-func (r *Raft) asLeaderOrFollowerHandleLeaderMsg(
-	lm LeaderMsg,
-	send chan cnet.PeerMsg,
-) {
-	if lm.Response {
-		// As a leader or follower ignore responses to old requests
-		// I am no longer a candidate
-		return
-	}
-
-	if lm.Term < r.term {
-		r.rejectLeaderMsg(lm, send)
-	} else if lm.Term > r.term {
-		r.becomeFollower(lm.Term)
-		r.handleLeaderMsg(lm, send)
-	}
-}
-
-func (r *Raft) asCandidateHandleLeaderMsg(
-	lm LeaderMsg,
-	send chan cnet.PeerMsg,
-) {
-	if lm.Term < r.term {
-		r.rejectLeaderMsg(lm, send)
-	} else if lm.Term > r.term {
-		r.becomeFollower(lm.Term)
-		r.handleLeaderMsg(lm, send)
-	} else if lm.Response {
-		// this is a response to a LeaderMsg I sent in the same term
-		r.handleLeaderMsgResponse(lm)
-	}
-}
-
 func (r *Raft) handleLeaderMsgResponse(lm LeaderMsg) {
 	if !lm.VoteGranted {
 		return
@@ -365,6 +335,19 @@ func (r *Raft) rejectLeaderMsg(lm LeaderMsg, send chan cnet.PeerMsg) {
 }
 
 func (r *Raft) handleLeaderMsg(lm LeaderMsg, send chan cnet.PeerMsg) {
+	if lm.Term < r.term {
+		r.rejectLeaderMsg(lm, send)
+		return
+	} else if lm.Term > r.term {
+		r.becomeFollower(lm.Term)
+		r.handleLeaderMsg(lm, send)
+		return
+	} else if lm.Response {
+		// this is a response to a LeaderMsg I sent in the same term
+		r.handleLeaderMsgResponse(lm)
+		return
+	}
+
 	lm.Dst = lm.Src
 	lm.Src = r.peers[r.id]
 	lm.Response = true
