@@ -9,8 +9,9 @@ or network partition, but are NOT malicious (byzantine). Peers follow the protoc
 I am currently in the process of implementing the protocol. Here is the list of tasks:
 
 - [x] Leader election protocol
-- [ ] Log append protocol
-- [ ] Http client REST endpoints
+- [x] Log append protocol
+- [ ] Module interface for Go clients
+- [ ] Http REST interface for Web clients
 
 I am implementing the protocol as a go module. I will write instructions later for
 installing and using the module in your go program. I am also implementing a
