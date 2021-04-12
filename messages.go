@@ -6,7 +6,11 @@ type AppendMsg struct {
 	Src, Dst string
 
 	// Request values
-	Term int
+	Term         int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []string
+	LeaderCommit int
 
 	// Response values
 	// Term
