@@ -37,6 +37,7 @@ func (n *Network) Run(send, recv chan PeerMsg) {
 		select {
 		case conn := <-connChan:
 			pm, err := recvMsg(conn)
+			conn.Close()
 			if err != nil {
 				fmt.Println(err)
 				continue
