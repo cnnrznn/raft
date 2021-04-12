@@ -33,6 +33,10 @@ type Raft struct {
 	votes       map[string]struct{}
 	votedFor    string
 	net         *cnet.Network
+
+	// leader info
+	nextIndex  []int
+	matchIndex []int
 }
 
 func New(
@@ -108,6 +112,13 @@ func (r *Raft) Run() {
 func (r *Raft) becomeLeader() {
 	r.role = Leader
 
+	r.nextIndex = make([]int, len(r.peers))
+	r.matchIndex = make([]int, len(r.peers))
+	for i := range r.peers {
+		r.nextIndex[i] = len(r.log)
+		r.matchIndex[i] = 0
+	}
+
 	// reset the vote
 	r.votedFor = ""
 }
@@ -134,8 +145,8 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 
 		lm := LeaderMsg{
 			Term:         r.term,
-			LastLogIndex: r.commitIndex,
-			LastLogTerm:  r.logTerms[r.commitIndex],
+			LastLogIndex: len(r.log) - 1,
+			LastLogTerm:  r.logTerms[len(r.log)-1],
 			Src:          r.peers[r.id],
 			Dst:          peer,
 		}
@@ -174,7 +185,7 @@ func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
 	}
 
 	// handle same term request
-	//for now do nothing
+	// TODO for now do nothing
 	am.Dst = am.Src
 	am.Src = r.peers[r.id]
 	am.Response = true
@@ -355,10 +366,10 @@ func (r *Raft) handleLeaderMsg(lm LeaderMsg, send chan cnet.PeerMsg) {
 	lm.Response = true
 
 	var isUpToDate bool = false
-	if lm.LastLogTerm > r.logTerms[r.commitIndex] {
+	if lm.LastLogTerm > r.logTerms[len(r.log)-1] {
 		isUpToDate = true
-	} else if lm.LastLogTerm == r.logTerms[r.commitIndex] &&
-		lm.LastLogIndex >= r.commitIndex {
+	} else if lm.LastLogTerm == r.logTerms[len(r.log)-1] &&
+		lm.LastLogIndex >= len(r.log)-1 {
 		isUpToDate = true
 	}
 
