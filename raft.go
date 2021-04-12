@@ -64,6 +64,7 @@ func (r *Raft) Run() {
 		electionTimeout := time.Duration(rand.Intn(500)+500) * time.Millisecond
 		switch r.role {
 		case Leader:
+			fmt.Println("I am Leader", r.term)
 			select {
 			// receive client command
 			// handle leader requests
@@ -75,6 +76,7 @@ func (r *Raft) Run() {
 				r.sendEmptyAppend(send)
 			}
 		case Follower:
+			fmt.Println("I am Follower", r.term)
 			select {
 			// respond to append request
 			case am := <-appendChan:
@@ -87,6 +89,7 @@ func (r *Raft) Run() {
 				r.becomeCandidate(send)
 			}
 		case Candidate:
+			fmt.Println("I am Candidate", r.term)
 			select {
 			case am := <-appendChan:
 				// Another is claiming leader
@@ -154,12 +157,71 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 }
 
 func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
-	if am.Response {
+	if am.Term < r.term {
+		r.rejectAppendMsg(am, send)
+	} else if am.Term > r.term {
+		r.becomeFollower(am.Term)
+		r.handleAppendMsg(am, send)
+	}
+	// message term is equal to our term
+
+	if am.Response && r.role == Leader {
+		r.handleAppendMsgResponse(am, send)
+		return
+	} else if am.Response {
+		// Not leader, don't handle a response
+		return
 	}
 
-	if am.Term < r.term {
-		am.Term = r.term
+	// handle same term request
+	//for now do nothing
+	am.Dst = am.Src
+	am.Src = r.peers[r.id]
+	am.Response = true
+	am.Success = true
+
+	amBytes, err := json.Marshal(am)
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
+
+	pm := cnet.PeerMsg{
+		Src:  am.Src,
+		Dst:  am.Dst,
+		Msg:  amBytes,
+		Type: APPEND,
+	}
+
+	send <- pm
+}
+
+func (r *Raft) handleAppendMsgResponse(am AppendMsg, send chan cnet.PeerMsg) {
+
+}
+
+func (r *Raft) rejectAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
+	// respond to out-dated candidate
+	am.Dst = am.Src
+	am.Src = r.peers[r.id]
+	am.Term = r.term
+	am.Response = true
+	am.Success = false
+
+	amBytes, err := json.Marshal(am)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	pm := cnet.PeerMsg{
+		Src:  am.Src,
+		Dst:  am.Dst,
+		Msg:  amBytes,
+		Type: APPEND,
+	}
+
+	send <- pm
 }
 
 func (r *Raft) sendEmptyAppend(send chan cnet.PeerMsg) {
@@ -170,6 +232,8 @@ func (r *Raft) sendEmptyAppend(send chan cnet.PeerMsg) {
 
 		am := AppendMsg{
 			Term: r.term,
+			Src:  r.peers[r.id],
+			Dst:  peer,
 		}
 		amBytes, err := json.Marshal(am)
 		if err != nil {
