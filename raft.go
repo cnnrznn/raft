@@ -211,12 +211,25 @@ func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
 		return
 	}
 
-	// handle same term request
-	// TODO for now do nothing
+	if am.PrevLogIndex >= len(r.log) || am.PrevLogTerm != r.logTerms[am.PrevLogIndex] {
+		am.Success = false
+	} else {
+		am.Success = true
+		entryTerms := make([]int, len(am.Entries))
+		for i := range entryTerms {
+			entryTerms[i] = r.term
+		}
+		r.log = append(r.log[:am.PrevLogIndex+1], am.Entries...)
+		r.logTerms = append(r.logTerms[:am.PrevLogIndex+1], entryTerms...)
+
+		if am.LeaderCommit > r.commitIndex {
+			r.commitIndex = min(am.LeaderCommit, len(r.log)-1)
+		}
+	}
+
 	am.Dst = am.Src
 	am.Src = r.peers[r.id]
 	am.Response = true
-	am.Success = true
 
 	amBytes, err := json.Marshal(am)
 	if err != nil {
@@ -235,7 +248,40 @@ func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
 }
 
 func (r *Raft) handleAppendMsgResponse(am AppendMsg, send chan cnet.PeerMsg) {
-	// TODO
+	peerIndex := 0
+	for i := range r.peers {
+		if am.Src == r.peers[i] {
+			peerIndex = i
+			break
+		}
+	}
+
+	if am.Success {
+		r.nextIndex[peerIndex] = am.PrevLogIndex + len(am.Entries) + 1
+		r.matchIndex[peerIndex] = r.nextIndex[peerIndex] - 1
+	} else {
+		r.nextIndex[peerIndex]--
+	}
+
+	r.incrementCommit()
+}
+
+func (r *Raft) incrementCommit() {
+	r.matchIndex[r.id] = len(r.log) - 1
+
+	for {
+		ct := 0
+		for _, n := range r.matchIndex {
+			if n >= r.commitIndex {
+				ct++
+			}
+		}
+		if ct > len(r.peers)/2 {
+			r.commitIndex++
+		} else {
+			break
+		}
+	}
 }
 
 func (r *Raft) rejectAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
