@@ -353,7 +353,7 @@ func (r *Raft) handleLeaderMsgResponse(lm LeaderMsg) {
 }
 
 func (r *Raft) rejectLeaderMsg(lm LeaderMsg, send chan cnet.PeerMsg) {
-	// respond to out-dated candidate
+	// respond to out-dated leader
 	lm.Dst = lm.Src
 	lm.Src = r.peers[r.id]
 	lm.Term = r.term
