@@ -21,5 +21,5 @@ HTTP REST endpoints.
 ### Out of scope
 
 - Membership changes
-- Persistence (we'll see in the future)
+- Persistence
 - Log compaction
