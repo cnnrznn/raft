@@ -7,7 +7,13 @@ import (
 	"time"
 
 	"github.com/cnnrznn/raft/cnet"
+	"github.com/google/uuid"
 )
+
+type Entry struct {
+	Msg string
+	Id  uuid.UUID
+}
 
 type Role string
 
@@ -26,7 +32,7 @@ type Raft struct {
 	id          int
 	peers       []string
 	term        int
-	log         []string
+	log         []Entry
 	logTerms    []int
 	commitIndex int
 	role        Role
@@ -49,7 +55,7 @@ func New(
 		role:        Follower,
 		net:         cnet.New(id, peers),
 		commitIndex: 0,
-		log:         []string{""},
+		log:         []Entry{{Msg: "", Id: uuid.New()}},
 		logTerms:    []int{0},
 		term:        0,
 	}

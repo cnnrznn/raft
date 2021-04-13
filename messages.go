@@ -9,7 +9,7 @@ type AppendMsg struct {
 	Term         int
 	PrevLogIndex int
 	PrevLogTerm  int
-	Entries      []string
+	Entries      []Entry
 	LeaderCommit int
 
 	// Response values
