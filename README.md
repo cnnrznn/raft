@@ -10,7 +10,7 @@ I am currently in the process of implementing the protocol. Here is the list of 
 
 - [x] Leader election protocol
 - [x] Log append protocol
-- [ ] Module interface for Go clients
+- [x] Module interface for Go clients
 - [ ] Http REST interface for Web clients
 
 I am implementing the protocol as a go module. I will write instructions later for

@@ -43,6 +43,9 @@ type Raft struct {
 	// leader info
 	nextIndex  []int
 	matchIndex []int
+
+	// client input
+	input chan Entry
 }
 
 func New(
@@ -58,6 +61,7 @@ func New(
 		log:         []Entry{{Msg: "", Id: uuid.New()}},
 		logTerms:    []int{0},
 		term:        0,
+		input:       make(chan Entry),
 	}
 }
 
@@ -74,9 +78,10 @@ func (r *Raft) Run() {
 		electionTimeout := time.Duration(rand.Intn(500)+500) * time.Millisecond
 		switch r.role {
 		case Leader:
-			fmt.Println("I am Leader", r.term)
 			select {
 			// receive client command
+			case entry := <-r.input:
+				r.handleInput(entry)
 			// handle append responses
 			case am := <-appendChan:
 				r.handleAppendMsg(am, send)
@@ -88,8 +93,10 @@ func (r *Raft) Run() {
 				r.sendAppendMsg(send)
 			}
 		case Follower:
-			fmt.Println("I am Follower", r.term)
 			select {
+			// receive client command
+			case entry := <-r.input:
+				r.handleInput(entry)
 			// respond to append request
 			case am := <-appendChan:
 				r.handleAppendMsg(am, send)
@@ -101,8 +108,10 @@ func (r *Raft) Run() {
 				r.becomeCandidate(send)
 			}
 		case Candidate:
-			fmt.Println("I am Candidate", r.term)
 			select {
+			// receive client command
+			case entry := <-r.input:
+				r.handleInput(entry)
 			case am := <-appendChan:
 				// Another is claiming leader
 				r.handleAppendMsg(am, send)
@@ -203,6 +212,15 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 	}
 }
 
+func (r *Raft) handleInput(entry Entry) {
+	if r.role != Leader {
+		return
+	}
+
+	r.log = append(r.log, entry)
+	r.logTerms = append(r.logTerms, r.term)
+}
+
 func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
 	if am.Term < r.term {
 		r.rejectAppendMsg(am, send)
@@ -266,7 +284,6 @@ func (r *Raft) handleAppendMsgResponse(am AppendMsg, send chan cnet.PeerMsg) {
 		r.matchIndex[peerIndex] = r.nextIndex[peerIndex] - 1
 	} else {
 		r.nextIndex[peerIndex]--
-		r.sendAppendMsg(send)
 	}
 
 	r.incrementCommit()
@@ -278,7 +295,7 @@ func (r *Raft) incrementCommit() {
 	for {
 		ct := 0
 		for _, n := range r.matchIndex {
-			if n >= r.commitIndex {
+			if n > r.commitIndex {
 				ct++
 			}
 		}
