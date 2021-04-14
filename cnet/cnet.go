@@ -1,6 +1,7 @@
 package cnet
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -50,14 +51,22 @@ func (n *Network) Run(send, recv chan PeerMsg) {
 }
 
 func recvMsg(conn net.Conn) (*PeerMsg, error) {
+	var size int64
 	var pm PeerMsg
-	bytes := make([]byte, 1024)
+
+	err := binary.Read(conn, binary.LittleEndian, &size)
+	if err != nil {
+		return nil, err
+	}
+
+	bytes := make([]byte, size)
 
 	n, err := conn.Read(bytes)
 	if err != nil {
 		fmt.Println(err)
 		return nil, fmt.Errorf("reading from connection")
 	}
+
 	err = json.Unmarshal(bytes[:n], &pm)
 	if err != nil {
 		fmt.Println(err)
@@ -80,6 +89,14 @@ func (n *Network) sendMsg(pm PeerMsg) {
 		fmt.Println(err)
 		return
 	}
+
+	size := int64(len(bytes))
+	err = binary.Write(conn, binary.LittleEndian, size)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
 	_, err = conn.Write(bytes)
 	if err != nil {
 		fmt.Println(err)
