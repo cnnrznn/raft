@@ -15,6 +15,11 @@ type Entry struct {
 	Id  uuid.UUID
 }
 
+type await struct {
+	Index int
+	Id    uuid.UUID
+}
+
 type Role string
 
 const (
@@ -45,7 +50,9 @@ type Raft struct {
 	matchIndex []int
 
 	// client input
-	input chan Entry
+	input    chan Entry
+	success  chan bool
+	awaiting *await
 }
 
 func New(
@@ -62,6 +69,7 @@ func New(
 		logTerms:    []int{0},
 		term:        0,
 		input:       make(chan Entry),
+		success:     make(chan bool),
 	}
 }
 
@@ -75,53 +83,32 @@ func (r *Raft) Run() {
 	go route(recv, appendChan, leaderChan)
 
 	for {
-		electionTimeout := time.Duration(rand.Intn(500)+500) * time.Millisecond
+		r.scanForAwaiting()
+
+		var timeout time.Duration
+		var callback func(chan cnet.PeerMsg)
 		switch r.role {
 		case Leader:
-			select {
-			// receive client command
-			case entry := <-r.input:
-				r.handleInput(entry)
-			// handle append responses
-			case am := <-appendChan:
-				r.handleAppendMsg(am, send)
-			// handle election
-			case lm := <-leaderChan:
-				r.handleLeaderMsg(lm, send)
-			// send regular updates faster than heartbeat timeout
-			case <-time.After(100 * time.Millisecond):
-				r.sendAppendMsg(send)
-			}
-		case Follower:
-			select {
-			// receive client command
-			case entry := <-r.input:
-				r.handleInput(entry)
-			// respond to append request
-			case am := <-appendChan:
-				r.handleAppendMsg(am, send)
-			// response to leader requests
-			case lm := <-leaderChan:
-				r.handleLeaderMsg(lm, send)
-			// elect a new leader
-			case <-time.After(electionTimeout):
-				r.becomeCandidate(send)
-			}
-		case Candidate:
-			select {
-			// receive client command
-			case entry := <-r.input:
-				r.handleInput(entry)
-			case am := <-appendChan:
-				// Another is claiming leader
-				r.handleAppendMsg(am, send)
-			case lm := <-leaderChan:
-				// Another candidate?
-				// Response from voter?
-				r.handleLeaderMsg(lm, send)
-			case <-time.After(electionTimeout):
-				r.becomeCandidate(send)
-			}
+			timeout = 100 * time.Millisecond
+			callback = r.sendAppendMsg
+		case Follower, Candidate:
+			timeout = time.Duration(rand.Intn(500)+500) * time.Millisecond
+			callback = r.becomeCandidate
+		}
+
+		select {
+		// receive client command
+		case entry := <-r.input:
+			r.handleInput(entry)
+		// handle append responses
+		case am := <-appendChan:
+			r.handleAppendMsg(am, send)
+		// handle election
+		case lm := <-leaderChan:
+			r.handleLeaderMsg(lm, send)
+		// send regular updates faster than heartbeat timeout
+		case <-time.After(timeout):
+			callback(send)
 		}
 	}
 }
@@ -214,11 +201,38 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 
 func (r *Raft) handleInput(entry Entry) {
 	if r.role != Leader {
+		r.success <- false
 		return
+	}
+
+	r.awaiting = &await{
+		Index: len(r.log),
+		Id:    entry.Id,
 	}
 
 	r.log = append(r.log, entry)
 	r.logTerms = append(r.logTerms, r.term)
+}
+
+func (r *Raft) scanForAwaiting() {
+	if r.awaiting == nil {
+		return
+	}
+
+	if r.commitIndex < r.awaiting.Index {
+		return
+	}
+
+	if r.log[r.awaiting.Index].Id == r.awaiting.Id {
+		// The entry was committed successfully
+		r.success <- true
+	} else {
+		// Entries have overwritten the awaited entry
+		r.success <- false
+	}
+
+	// Cleanup
+	r.awaiting = nil
 }
 
 func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
