@@ -15,7 +15,6 @@ import (
 type config struct {
 	Peers []string `json:"peers"`
 	APIs  []string `json:"apis"`
-	Self  int      `json:"self"`
 }
 
 type Server struct {
@@ -28,10 +27,9 @@ func main() {
 	config := readPeers()
 	args := os.Args
 	id, _ := strconv.Atoi(args[1])
-	config.Self = id
 
 	// Make raft instance
-	raft := raft.New(config.Self, config.Peers)
+	raft := raft.New(id, config.Peers)
 	fmt.Println(raft)
 
 	// Run raft
