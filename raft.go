@@ -15,6 +15,11 @@ type Entry struct {
 	Id  uuid.UUID
 }
 
+type Result struct {
+	Leader  int
+	Success bool
+}
+
 type await struct {
 	Index int
 	Id    uuid.UUID
@@ -36,6 +41,7 @@ const (
 type Raft struct {
 	id          int
 	peers       []string
+	leader      int
 	term        int
 	log         []Entry
 	logTerms    []int
@@ -51,7 +57,7 @@ type Raft struct {
 
 	// client input
 	input    chan Entry
-	success  chan bool
+	output   chan Result
 	awaiting *await
 }
 
@@ -69,7 +75,7 @@ func New(
 		logTerms:    []int{0},
 		term:        0,
 		input:       make(chan Entry),
-		success:     make(chan bool),
+		output:      make(chan Result),
 	}
 }
 
@@ -99,7 +105,7 @@ func (r *Raft) Run() {
 		select {
 		// receive client command
 		case entry := <-r.input:
-			r.handleInput(entry)
+			r.handleInput(entry, send)
 		// handle append responses
 		case am := <-appendChan:
 			r.handleAppendMsg(am, send)
@@ -143,6 +149,7 @@ func route(recv chan cnet.PeerMsg, appendChan chan AppendMsg, leaderChan chan Le
 
 func (r *Raft) becomeLeader() {
 	r.role = Leader
+	r.leader = r.id
 
 	r.nextIndex = make([]int, len(r.peers))
 	r.matchIndex = make([]int, len(r.peers))
@@ -199,9 +206,12 @@ func (r *Raft) becomeCandidate(send chan cnet.PeerMsg) {
 	}
 }
 
-func (r *Raft) handleInput(entry Entry) {
+func (r *Raft) handleInput(entry Entry, send chan cnet.PeerMsg) {
 	if r.role != Leader {
-		r.success <- false
+		r.output <- Result{
+			Success: false,
+			Leader:  r.leader,
+		}
 		return
 	}
 
@@ -212,6 +222,8 @@ func (r *Raft) handleInput(entry Entry) {
 
 	r.log = append(r.log, entry)
 	r.logTerms = append(r.logTerms, r.term)
+
+	r.sendAppendMsg(send)
 }
 
 func (r *Raft) scanForAwaiting() {
@@ -223,12 +235,15 @@ func (r *Raft) scanForAwaiting() {
 		return
 	}
 
+	success := false
 	if r.log[r.awaiting.Index].Id == r.awaiting.Id {
 		// The entry was committed successfully
-		r.success <- true
-	} else {
-		// Entries have overwritten the awaited entry
-		r.success <- false
+		success = true
+	}
+
+	r.output <- Result{
+		Leader:  r.leader,
+		Success: success,
 	}
 
 	// Cleanup
@@ -246,6 +261,13 @@ func (r *Raft) handleAppendMsg(am AppendMsg, send chan cnet.PeerMsg) {
 	} else if am.Response {
 		r.handleAppendMsgResponse(am, send)
 		return
+	}
+
+	for i, peer := range r.peers {
+		if peer == am.Src {
+			r.leader = i
+			break
+		}
 	}
 
 	if am.PrevLogIndex >= len(r.log) || am.PrevLogTerm != r.logTerms[am.PrevLogIndex] {
