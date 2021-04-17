@@ -4,13 +4,13 @@ import (
 	"github.com/google/uuid"
 )
 
-func (r *Raft) Request(msg string) bool {
+func (r *Raft) Request(msg string) Result {
 	r.input <- Entry{
 		Msg: msg,
 		Id:  uuid.New(),
 	}
 
-	return <-r.success
+	return <-r.output
 }
 
 func (r *Raft) Retrieve(start int) []Entry {
