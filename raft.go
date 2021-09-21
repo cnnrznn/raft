@@ -79,6 +79,10 @@ func New(
 	}
 }
 
+func (r *Raft) Leader() int {
+	return r.leader
+}
+
 func (r *Raft) Run() {
 	send := make(chan cnet.PeerMsg, 100)
 	recv := make(chan cnet.PeerMsg, 100)
