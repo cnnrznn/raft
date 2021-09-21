@@ -4,7 +4,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func (r *Raft) Request(msg string) Result {
+func (r *Raft) Submit(msg string) Result {
 	r.input <- Entry{
 		Msg: msg,
 		Id:  uuid.New(),

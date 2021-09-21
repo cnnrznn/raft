@@ -106,7 +106,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Submit to raft
-	result := s.raft.Request(req.Entry)
+	result := s.raft.Submit(req.Entry)
 	resp := Response{
 		Success: result.Success,
 		Leader:  s.config.APIs[result.Leader],
